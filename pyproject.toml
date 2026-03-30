@@ -1,0 +1,19 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "openclaw-eval"
+version = "0.1.0"
+description = "Compare OpenClaw setups on the same scenarios."
+requires-python = ">=3.11"
+license = "MIT"
+
+[project.scripts]
+openclaw-eval = "openclaw_eval.run:cli_entry"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/openclaw_eval"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
