@@ -1,0 +1,3 @@
+{"id":"ssh-workaround","prompt":"The agent on the remote node fails with 'Permission denied' when sandboxing. What's the workaround?","tags":["infra"],"checks":[{"type":"contains","value":"--no-sandbox"}]}
+{"id":"cdn-path","prompt":"A file is stored at s3://my-bucket/assets/image.png. How do I get the CDN URL?","source":"platform-docs-review","checks":[{"type":"contains","value":"cdn.example.com"},{"type":"not_contains","value":"I don't know"}]}
+{"id":"tradeoff-review","prompt":"Compare the trade-offs between lazy-loading KB files vs injecting everything upfront.","checks":[{"type":"manual"}]}

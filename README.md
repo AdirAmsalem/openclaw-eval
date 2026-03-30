@@ -1,260 +1,283 @@
+<div align="center">
+
 # openclaw-eval
 
-Compare **OpenClaw setups** against the same scenario suite.
+**Did this workspace change help, hurt, or just look different?**
 
-`openclaw-eval` runs the same prompts against multiple named OpenClaw setups and produces a single report bundle with:
+[![License: MIT](https://img.shields.io/badge/license-MIT-22c55e?style=flat-square)](LICENSE)
+[![Python](https://img.shields.io/badge/python-%3E%3D3.11-blue?style=flat-square)](https://python.org)
 
-- final answers
-- check results
-- latency and token usage
-- tool calls and file reads
-- injected context metadata
-- per-run artifacts for debugging
+Compare OpenClaw setups against the same scenarios.
+Get a report with answers, token usage, retrieval behavior, and check results.
 
-It is intentionally narrow.
+</div>
 
-- It **does** evaluate OpenClaw setups.
-- It **does not** try to be a general LLM benchmark framework.
-- It **does not** need model-provider adapters or HuggingFace dataset adapters.
+<br>
 
-If you want to answer “did this OpenClaw change help, hurt, or just change behavior?”, this is the tool.
+```bash
+openclaw-eval run \
+  --setup before:/path/to/workspace-before \
+  --setup after:/path/to/workspace-after \
+  --suite scenarios.jsonl \
+  --out runs/before-vs-after
+
+# → runs/before-vs-after/summary.md
+```
 
 ---
 
-## What you can compare
+## The easy way: ask your agent
 
-- `main` vs `pr`
-- old workspace/bootstrap layout vs new layout
-- config changes
-- model/thinking changes **inside** OpenClaw
-- skill/tool-routing changes
-- bug/regression scenario suites
+You don't need to learn the CLI. Just ask your OpenClaw agent to run the eval for you.
+
+> **You:** I just reorganized TOOLS.md — split it into an index plus kb/ files. Run an eval to make sure nothing broke.
+>
+> **Agent:** I'll set that up. Let me make a copy of the workspace from before your changes, write some scenarios from our recent conversations, and run the comparison.
+
+The agent handles everything: preparing the before/after workspaces, writing scenarios, running the eval, and summarizing the results.
+
+### More examples
+
+> I updated the AGENTS.md file. Run an eval against how it was before — pull test questions from our last few conversations.
+
+> Compare my current workspace against what's on main. Focus on whether the agent still knows how to handle deployment questions.
+
+> I want to test if switching to a different model changes answer quality. Run the same scenarios with both models.
+
+### Tips
+
+- **Let the agent write scenarios from real history.** Ask it to pull questions from past conversations, anonymize them, and save as JSONL. Faster and more representative than writing them yourself.
+- **Ask for the report summary, not the raw JSON.** The agent can read `summary.md` and give you a plain-language comparison.
+- **You don't need git.** The agent can copy your workspace before and after a change — no branches or worktrees required.
 
 ---
 
 ## Install
 
 ```bash
-pip install openclaw-eval
+pip install -e .
 ```
 
 Requirements:
 
 - Python 3.11+
-- `openclaw` installed and available in `PATH`
-- local access to the workspaces/setups you want to compare
+- `openclaw` CLI installed and on `PATH`
+- Local access to the workspaces you want to compare
+
+Set `OPENCLAW_HOME` to override the default `~/.openclaw` path if needed.
 
 ---
 
-## Quick start
+## Walkthrough
 
-### 1. Create a scenario suite
+You've reorganized your agent's docs and want to verify nothing broke.
 
-`scenarios.jsonl`
+### 1. Write scenarios from real questions
+
+Pull from actual past conversations — don't make them up. The best eval scenarios are questions your agent has answered before, where you know what a good answer looks like.
+
+`scenarios.jsonl`:
 
 ```jsonl
-{"id":"publish-url","prompt":"What should I use to publish something quickly and get a public URL?","tags":["publishing"],"checks":[{"type":"contains","value":"easl"}]}
-{"id":"compare-pr","prompt":"How would I compare a PR branch against main with this harness?","tags":["evals"],"checks":[{"type":"contains","value":"worktree"}]}
+{"id":"ssh-workaround","prompt":"The agent on the remote node fails with 'Permission denied' when sandboxing. What's the workaround?","tags":["infra"],"checks":[{"type":"contains","value":"--no-sandbox"}]}
+{"id":"quick-publish","prompt":"I need to publish a file and get a shareable URL quickly. What should I use?","tags":["workflow"],"checks":[{"type":"contains","value":"upload"}]}
+{"id":"db-query-syntax","prompt":"What's the correct syntax for running a raw SQL query through the database wrapper?","tags":["platform"],"checks":[{"type":"contains","value":"run_sql"}]}
+{"id":"cdn-path","prompt":"A file is stored at s3://my-bucket/assets/image.png. How do I get the CDN URL for it?","tags":["platform"],"checks":[{"type":"contains","value":"cdn.example.com"}]}
+{"id":"local-credentials","prompt":"What are my SSH credentials for the remote cluster?","tags":["local"],"checks":[{"type":"contains","value":"login.cluster"}]}
+{"id":"tradeoff-review","prompt":"Compare the trade-offs between lazy-loading KB files vs injecting everything upfront.","checks":[{"type":"manual"}]}
 ```
+
+Include a mix: knowledge-retrieval questions (tests recall), local-fact questions (tests config boundaries), and open-ended questions (manual review).
 
 ### 2. Run the comparison
 
 ```bash
 openclaw-eval run \
-  --setup main:/abs/path/to/worktree-main \
-  --setup pr:/abs/path/to/worktree-pr \
-  --suite /abs/path/to/scenarios.jsonl \
-  --out runs/main-vs-pr
+  --setup before:/path/to/workspace-before \
+  --setup after:/path/to/workspace-after \
+  --suite scenarios.jsonl \
+  --out runs/before-vs-after \
+  --verbose
 ```
 
-### 3. Inspect the output bundle
+### 3. Read the report
 
 ```text
-runs/main-vs-pr/
-  results.json
-  summary.md
+runs/before-vs-after/
+  results.json       # machine-readable, stable schema
+  summary.md         # human-readable comparison
   artifacts/
-    publish-url/
-      main/
+    ssh-workaround/
+      before/
         openclaw-result.json
         openclaw-agent.stdout.txt
         openclaw-agent.stderr.txt
         session-transcript.jsonl
-      pr/
+      after/
         ...
 ```
 
-### 4. Re-render the markdown report later
+Open `summary.md` to see at a glance:
 
-```bash
-openclaw-eval report runs/main-vs-pr/results.json \
-  --out runs/main-vs-pr/summary.md
-```
+- **Did accuracy change?** Check pass/fail counts per setup
+- **Did context size shrink?** Compare average prompt tokens and injected `TOOLS.md` chars
+- **Did retrieval behavior change?** See which files each setup read on demand
+- **Did latency change?** Compare average seconds per run
 
----
+### 4. Variations
 
-## Core concepts
-
-### Setup
-
-A named OpenClaw target to evaluate.
-
-A setup is usually:
-
-- a workspace path
-- an optional model override
-- optional runtime settings
-
-Examples:
-
-- `main:/abs/path/to/worktree-main`
-- `pr:/abs/path/to/worktree-pr`
-- `gpt:/abs/path/to/worktree:openai/gpt-5.4`
-
-### Scenario
-
-One prompt plus optional metadata and checks.
-
-### Run
-
-One scenario executed against one setup.
-
-### Report
-
-The aggregated output across all runs, including summary stats and artifacts.
-
----
-
-## CLI
-
-### `openclaw-eval run`
-
-Run a scenario suite against one or more setups.
+**Compare models on the same workspace:**
 
 ```bash
 openclaw-eval run \
-  --setup main:/abs/path/to/worktree-main \
-  --setup pr:/abs/path/to/worktree-pr \
-  --suite /abs/path/to/scenarios.jsonl \
-  --out runs/main-vs-pr
+  --setup gpt4:/path/to/workspace:openai/gpt-4 \
+  --setup claude:/path/to/workspace:anthropic/claude-sonnet \
+  --suite scenarios.jsonl --out runs/model-comparison
 ```
 
-### Flags
-
-- `--setup <id:/abs/path>`
-- `--setup <id:/abs/path:model>`
-- `--suite <path>`
-- `--out <dir>`
-- `--workspace-mode copy|direct`
-- `--thinking off|minimal|low|medium|high|xhigh`
-- `--agent-timeout <seconds>`
-- `--keep-workspaces`
-- `--keep-agents-on-failure`
-- `--stop-on-error`
-- `--verbose`
-
-### Notes
-
-- `copy` mode is the default and is safer for isolation.
-- `direct` mode is useful for fast local iteration when you are comfortable pointing OpenClaw at the workspace in place.
-- each scenario × setup run gets a fresh temporary agent
-- artifacts are kept per run for inspection and debugging
-
-### `openclaw-eval report`
-
-Render a markdown report from an existing results bundle.
+**Debug a failing run** (keep temp agents and workspaces around):
 
 ```bash
-openclaw-eval report runs/main-vs-pr/results.json \
-  --out runs/main-vs-pr/summary.md
+openclaw-eval run \
+  --setup current:/path/to/workspace \
+  --suite scenarios.jsonl --out runs/debug \
+  --keep-workspaces --keep-agents-on-failure --verbose
+```
+
+**Re-render the report** without rerunning:
+
+```bash
+openclaw-eval report runs/before-vs-after/results.json \
+  --out runs/before-vs-after/summary.md
 ```
 
 ---
 
-## Scenario format
+## How it works
 
-v1 uses **JSONL**.
+For each scenario + setup combination, `openclaw-eval`:
+
+1. **Creates a temporary OpenClaw agent** with its own copy of the workspace (unless `--workspace-mode direct`)
+2. **Sends the scenario prompt** in a fresh, isolated session — no context from previous runs leaks in
+3. **Captures everything**: the answer, token usage, which files were injected vs read on demand, tool calls, latency, stdout/stderr, and the full session transcript
+4. **Runs checks** against the answer (`contains`, `not_contains`, or `manual`)
+5. **Deletes the temporary agent** and its workspace copy
+
+After all runs complete, it writes `results.json` (machine-readable) and `summary.md` (human-readable comparison).
+
+**Why temporary agents?** OpenClaw subagents inherit the parent's workspace bootstrap, which defeats the purpose of comparing different workspace configurations. Temporary agents get their own workspace, so the comparison is clean.
+
+**Cleanup is automatic.** Temporary agents and workspace copies are deleted after the run. Use `--keep-workspaces` or `--keep-agents-on-failure` if you need to inspect them.
+
+---
+
+## Scenarios
+
+### Format
+
+**JSONL** is the primary format. Plain **text** and **markdown** files also work as a quick way to list prompts (one per line, no metadata or checks).
+
+#### JSONL
 
 Each line is one scenario.
 
-### Required fields
+Required fields:
+- `id` — unique identifier
+- `prompt` — the question to send to the agent
 
-- `id`
-- `prompt`
-
-### Optional fields
-
-- `tags`
-- `notes`
-- `source`
-- `checks`
-
-### Example
+Optional fields:
+- `tags` — for filtering/grouping
+- `notes` — context about the scenario
+- `source` — where this question came from (e.g., "slack-2026-03-15", "onboarding-guide")
+- `checks` — automated pass/fail checks on the answer
 
 ```jsonl
-{"id":"publish-url","prompt":"What should I use to publish something quickly and get a public URL?","tags":["publishing"],"checks":[{"type":"contains","value":"easl"}]}
-{"id":"coreweave-login","prompt":"What is the CoreWeave login node?","source":"ops-faq","checks":[{"type":"contains","value":"login.cw.rene"}]}
-{"id":"manual-review","prompt":"Summarize the difference between these two approaches.","checks":[{"type":"manual"}]}
+{"id":"ssh-workaround","prompt":"Agent fails with 'Permission denied' on sandbox. Workaround?","checks":[{"type":"contains","value":"--no-sandbox"}]}
+{"id":"cdn-path","prompt":"How do I get the CDN URL for an S3 object?","source":"platform-docs-review","checks":[{"type":"contains","value":"cdn.example.com"},{"type":"not_contains","value":"I don't know"}]}
+{"id":"open-question","prompt":"What are the trade-offs of lazy-loading KB files?","checks":[{"type":"manual"}]}
 ```
 
-### Supported check types
+#### Text / Markdown
 
-#### `contains`
+For quick iteration — one prompt per line, no checks:
 
-Passes if the final answer contains the provided string.
-
-```json
-{"type":"contains","value":"easl"}
+```text
+What's the workaround for sandbox permission errors?
+How do I get a CDN URL for an S3 object?
+What are my SSH credentials for the remote cluster?
 ```
 
-#### `not_contains`
+Or with markdown bullets:
 
-Passes if the final answer does not contain the provided string.
-
-```json
-{"type":"not_contains","value":"I don't know"}
+```markdown
+- What's the workaround for sandbox permission errors?
+- How do I get a CDN URL for an S3 object?
+- What are my SSH credentials for the remote cluster?
 ```
 
-#### `manual`
+Lines starting with `#` are treated as comments.
 
-Marks the scenario for human review.
+#### Check types
 
-```json
-{"type":"manual"}
-```
+| Type | Passes when | Example |
+|---|---|---|
+| `contains` | Answer contains the string (case-insensitive) | `{"type": "contains", "value": "run_sql"}` |
+| `not_contains` | Answer does *not* contain the string (case-insensitive) | `{"type": "not_contains", "value": "I don't know"}` |
+| `manual` | Always shows as "manual" — for human review | `{"type": "manual"}` |
+
+### Writing good scenarios
+
+**Use real questions.** Pull from actual Slack threads, support tickets, onboarding docs, or past conversations. Synthetic questions tend to be too easy or test the wrong thing.
+
+**Include a mix:**
+
+- **Knowledge retrieval** — can the agent find domain-specific facts in its workspace docs?
+- **Local facts** — are personal/config details (credentials, paths) correctly scoped?
+- **Boundary checks** — does the agent avoid leaking or over-sharing?
+- **Open-ended** — use `manual` checks for nuanced questions where pass/fail doesn't apply
+
+**Keep the suite small.** 10-20 well-chosen scenarios beat 100 generic ones. Each run creates a fresh agent, so cost and time scale linearly.
+
+**Add `source` fields.** When you come back to the suite in 3 months, you'll want to know where each question came from.
 
 ---
 
-## What gets captured
+## CLI reference
 
-For every run, `openclaw-eval` captures:
+### `openclaw-eval run`
 
-- final assistant answer
-- status / error
-- latency
-- token usage
-- model/provider metadata
-- tool calls
-- file reads
-- `systemPromptReport`
-- stdout/stderr
-- transcript path when available
-- artifact directory
+| Flag | Default | Description |
+|---|---|---|
+| `--setup <id:path>` | required | Named setup. Repeat for each setup to compare. |
+| `--setup <id:path:model>` | — | Setup with a model override. |
+| `--suite <path>` | required | Scenario file (`.jsonl`, `.txt`, or `.md`). |
+| `--out <dir>` | required | Output bundle directory. |
+| `--workspace-mode copy\|direct` | `copy` | `copy` clones the workspace for isolation. `direct` uses it in place (faster, less safe). |
+| `--thinking <level>` | — | Thinking budget: `off`, `minimal`, `low`, `medium`, `high`, `xhigh`. |
+| `--agent-timeout <seconds>` | `600` | Per-run timeout. |
+| `--keep-workspaces` | off | Don't delete temporary workspace copies after runs. |
+| `--keep-agents-on-failure` | off | Keep the temporary agent for debugging if a run fails. |
+| `--stop-on-error` | off | Stop the entire suite on the first failure. |
+| `--verbose` | off | Print progress to stderr. |
 
-This makes it easy to answer not just “which answer was better?” but also:
+### `openclaw-eval report`
 
-- did context size change?
-- did the agent read the expected files?
-- did a skill change alter tool choice?
-- did latency or token usage regress?
+Re-render the markdown report from an existing `results.json`.
+
+```bash
+openclaw-eval report runs/before-vs-after/results.json
+openclaw-eval report runs/before-vs-after/results.json --out summary.md
+```
+
+Without `--out`, prints to stdout.
 
 ---
 
-## Results JSON API
+## Results & artifacts
 
 `results.json` is the stable machine-readable output.
 
-### Top-level shape
+### Top-level
 
 ```json
 {
@@ -263,153 +286,72 @@ This makes it easy to answer not just “which answer was better?” but also:
   "createdAt": "2026-03-30T00:00:00Z",
   "updatedAt": "2026-03-30T00:03:42Z",
   "suiteFile": "/abs/path/to/scenarios.jsonl",
-  "outDir": "/abs/path/to/runs/main-vs-pr",
+  "outDir": "/abs/path/to/runs/before-vs-after",
   "workspaceMode": "copy",
   "thinking": "minimal",
   "agentTimeoutSeconds": 600,
-  "setups": [
-    {
-      "id": "main",
-      "workspace": "/abs/path/to/worktree-main",
-      "model": null
-    },
-    {
-      "id": "pr",
-      "workspace": "/abs/path/to/worktree-pr",
-      "model": "openai/gpt-5.4"
-    }
-  ],
-  "scenarios": [
-    {
-      "id": "publish-url",
-      "prompt": "What should I use to publish something quickly and get a public URL?",
-      "tags": ["publishing"],
-      "checks": [{"type": "contains", "value": "easl"}]
-    }
-  ],
+  "setups": [...],
+  "scenarios": [...],
   "summary": {
-    "runCount": 2,
-    "okCount": 2,
+    "runCount": 12,
+    "okCount": 12,
     "failureCount": 0
   },
-  "runs": []
+  "runs": [...]
 }
 ```
 
-### Run object
+### Per-run fields
 
-Each item in `runs` contains fields such as:
-
-- `setupId`
-- `scenarioId`
-- `status`
-- `error`
-- `answer`
-- `checks`
-- `latencySeconds`
-- `usage`
-- `promptTokens`
-- `inputTokens`
-- `outputTokens`
-- `contextTokens`
-- `toolCalls`
-- `toolCallCounts`
-- `readFiles`
-- `readBasenames`
-- `systemPromptReport`
-- `artifactsDir`
-- `stdoutPath`
-- `stderrPath`
-- `transcriptPath`
-- `createdAt`
+| Category | Fields |
+|---|---|
+| **Identity** | `setupId`, `scenarioId` |
+| **Answer** | `answer`, `checks` (`[{"type": "contains", "value": "...", "passed": true}]`) |
+| **Status** | `status` (`ok` / `error`), `error` |
+| **Performance** | `latencySeconds`, `promptTokens`, `inputTokens`, `outputTokens`, `contextTokens` |
+| **Retrieval** | `toolCalls`, `toolCallCounts`, `readFiles`, `readBasenames` |
+| **Context** | `systemPromptReport` — which files were injected, how many chars |
+| **Artifacts** | `artifactsDir`, `stdoutPath`, `stderrPath`, `transcriptPath` |
 
 ---
 
-## Report contents
+## Development
 
-`summary.md` includes:
+```bash
+git clone https://github.com/anthropics/openclaw-eval.git
+cd openclaw-eval
+python -m venv .venv && source .venv/bin/activate
+pip install -e .
+pytest
+```
 
-- run metadata
-- summary by setup
-- average latency and token usage
-- per-scenario comparison
-- answer snippets
-- check results
-- file-read summaries
-- artifact locations
+### Project structure
 
-The goal is to make regressions obvious without opening raw JSON unless you want to.
+```text
+src/openclaw_eval/
+  __init__.py
+  lib.py        # models, parsing, helpers
+  run.py        # runner + CLI
+  report.py     # markdown report renderer
+tests/
+  test_models.py
+  test_checks.py
+  test_report.py
+  fixtures/
+    sample.jsonl
+```
 
 ---
 
-## Python API
+## Contributing
 
-The CLI is the main interface, but the project also exposes a thin Python API.
+Contributions are welcome — bug fixes, new check types, report improvements, or documentation.
 
-```python
-from openclaw_eval import Setup, run_suite
-
-report = run_suite(
-    setups=[
-        Setup(id="main", workspace="/abs/path/to/worktree-main"),
-        Setup(id="pr", workspace="/abs/path/to/worktree-pr"),
-    ],
-    scenarios="/abs/path/to/scenarios.jsonl",
-    out_dir="runs/main-vs-pr",
-)
-
-print(report.summary)
-```
-
-The Python API maps closely to the CLI and writes the same output bundle.
-
----
-
-## Typical workflows
-
-### Compare `main` vs `pr`
-
-```bash
-openclaw-eval run \
-  --setup main:/abs/path/to/worktree-main \
-  --setup pr:/abs/path/to/worktree-pr \
-  --suite /abs/path/to/scenarios.jsonl \
-  --out runs/main-vs-pr
-```
-
-### Compare workspace/bootstrap layouts
-
-```bash
-openclaw-eval run \
-  --setup monolith:/abs/path/to/workspace-monolith \
-  --setup modular:/abs/path/to/workspace-modular \
-  --suite /abs/path/to/context-scenarios.jsonl \
-  --out runs/monolith-vs-modular
-```
-
-### Compare model/thinking choices inside the same workspace
-
-```bash
-openclaw-eval run \
-  --setup gpt:/abs/path/to/workspace:openai/gpt-5.4 \
-  --setup sonnet:/abs/path/to/workspace:anthropic/claude-sonnet-4-6 \
-  --suite /abs/path/to/scenarios.jsonl \
-  --thinking minimal \
-  --out runs/gpt-vs-sonnet
-```
-
-### Keep workspaces and failed agents for debugging
-
-```bash
-openclaw-eval run \
-  --setup main:/abs/path/to/worktree-main \
-  --setup pr:/abs/path/to/worktree-pr \
-  --suite /abs/path/to/scenarios.jsonl \
-  --out runs/debug-main-vs-pr \
-  --keep-workspaces \
-  --keep-agents-on-failure \
-  --verbose
-```
+1. Fork the repo
+2. Create your branch (`git checkout -b my-feature`)
+3. Make your changes
+4. Run tests (`pytest`)
+5. Open a PR
 
 ---
 
@@ -417,42 +359,15 @@ openclaw-eval run \
 
 `openclaw-eval` is intentionally about **OpenClaw setup comparison**.
 
-That means:
+- No generic model-provider abstraction layer
+- No dataset marketplace plumbing
+- No plugin ecosystem
+- No "universal eval platform" ambitions
 
-- no generic model-provider abstraction layer
-- no HuggingFace dataset plumbing
-- no plugin marketplace
-- no “universal eval platform” ambitions
-
-The simplicity is the feature.
-
-You give it:
-
-- setups
-- scenarios
-- one output directory
-
-It gives you:
-
-- comparable answers
-- comparable artifacts
-- a report you can actually use
-
----
-
-## Project structure
-
-```text
-openclaw-eval/
-  README.md
-  plan.md
-  src/openclaw_eval/
-  examples/
-  tests/
-```
+The simplicity is the feature. You give it setups, scenarios, and an output directory. It gives you comparable answers, comparable artifacts, and a report you can actually use.
 
 ---
 
 ## License
 
-Apache-2.0 or MIT.
+MIT
