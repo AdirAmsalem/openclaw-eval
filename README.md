@@ -1,8 +1,10 @@
 <div align="center">
 
-<img src="assets/logo.jpg" alt="openclaw-eval" width="400">
+<br>
 
-# openclaw-eval
+<img src="assets/logo.jpg" alt="openclaw-eval" width="50%">
+
+<br>
 
 **Did this workspace change help, hurt, or just look different?**
 
