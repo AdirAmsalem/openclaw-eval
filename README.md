@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="assets/logo.jpg" alt="openclaw-eval" width="400">
+
 # openclaw-eval
 
 **Did this workspace change help, hurt, or just look different?**
